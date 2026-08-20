@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>MuleSoft AI Engineering Copilot</title>
+  <style>
+    :root{color-scheme:dark}body{margin:0;font-family:Inter,system-ui,sans-serif;background:#090b10;color:#f5f7fb}main{max-width:1000px;margin:0 auto;padding:48px 20px}.brand{font-size:28px;font-weight:800}.sub{color:#9aa4b2;margin:8px 0 32px}.card{background:#11151d;border:1px solid #252c38;border-radius:16px;padding:20px}textarea{width:100%;min-height:150px;box-sizing:border-box;background:#0b0e14;color:#fff;border:1px solid #303847;border-radius:10px;padding:14px;font:inherit}button{margin-top:12px;padding:11px 18px;border:0;border-radius:9px;background:#fff;color:#090b10;font-weight:700;cursor:pointer}.meta{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}.pill{border:1px solid #303847;border-radius:999px;padding:6px 10px;color:#b9c2cf;font-size:13px}.answer{white-space:pre-wrap;margin-top:18px;background:#0b0e14;border-radius:10px;padding:16px;min-height:80px}.error{color:#ff8d8d}</style>
+</head>
+<body><main>
+  <div class="brand">MuleSoft AI Engineering Copilot</div>
+  <div class="sub">Understand → Generate → Validate → Debug → Fix</div>
+  <section class="card">
+    <textarea id="message" placeholder="Ask anything MuleSoft: Create a DataWeave transformation...">Create a DataWeave transformation that maps customer name and salary</textarea>
+    <button id="send">Run Copilot</button>
+    <div id="meta" class="meta"></div>
+    <div id="answer" class="answer">Ready.</div>
+  </section>
+</main>
+<script>
+const $=id=>document.getElementById(id);const API=localStorage.getItem('COPILOT_API')||'http://localhost:8000';
+$('send').onclick=async()=>{const message=$('message').value.trim();if(!message)return;$('send').disabled=true;$('answer').textContent='Thinking...';$('meta').innerHTML='';try{const r=await fetch(API+'/api/v1/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,context:{}})});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Request failed');$('answer').textContent=d.answer;$('meta').innerHTML=`<span class="pill">Agent: ${d.agent}</span><span class="pill">Confidence: ${Math.round(d.confidence*100)}%</span><span class="pill">Validation: ${d.validation}</span><span class="pill">Attempts: ${d.attempts}</span>`}catch(e){$('answer').innerHTML='<span class="error">'+e.message+'</span>'}finally{$('send').disabled=false}};
+</script></body></html>
