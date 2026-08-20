@@ -1,23 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>MuleSoft AI Engineering Copilot</title>
-  <style>
-    :root{color-scheme:dark}body{margin:0;font-family:Inter,system-ui,sans-serif;background:#090b10;color:#f5f7fb}main{max-width:1000px;margin:0 auto;padding:48px 20px}.brand{font-size:28px;font-weight:800}.sub{color:#9aa4b2;margin:8px 0 32px}.card{background:#11151d;border:1px solid #252c38;border-radius:16px;padding:20px}textarea{width:100%;min-height:150px;box-sizing:border-box;background:#0b0e14;color:#fff;border:1px solid #303847;border-radius:10px;padding:14px;font:inherit}button{margin-top:12px;padding:11px 18px;border:0;border-radius:9px;background:#fff;color:#090b10;font-weight:700;cursor:pointer}.meta{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}.pill{border:1px solid #303847;border-radius:999px;padding:6px 10px;color:#b9c2cf;font-size:13px}.answer{white-space:pre-wrap;margin-top:18px;background:#0b0e14;border-radius:10px;padding:16px;min-height:80px}.error{color:#ff8d8d}</style>
-</head>
-<body><main>
-  <div class="brand">MuleSoft AI Engineering Copilot</div>
-  <div class="sub">Understand → Generate → Validate → Debug → Fix</div>
-  <section class="card">
-    <textarea id="message" placeholder="Ask anything MuleSoft: Create a DataWeave transformation...">Create a DataWeave transformation that maps customer name and salary</textarea>
-    <button id="send">Run Copilot</button>
-    <div id="meta" class="meta"></div>
-    <div id="answer" class="answer">Ready.</div>
-  </section>
-</main>
-<script>
-const $=id=>document.getElementById(id);const API=localStorage.getItem('COPILOT_API')||'http://localhost:8000';
-$('send').onclick=async()=>{const message=$('message').value.trim();if(!message)return;$('send').disabled=true;$('answer').textContent='Thinking...';$('meta').innerHTML='';try{const r=await fetch(API+'/api/v1/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,context:{}})});const d=await r.json();if(!r.ok)throw new Error(d.detail||'Request failed');$('answer').textContent=d.answer;$('meta').innerHTML=`<span class="pill">Agent: ${d.agent}</span><span class="pill">Confidence: ${Math.round(d.confidence*100)}%</span><span class="pill">Validation: ${d.validation}</span><span class="pill">Attempts: ${d.attempts}</span>`}catch(e){$('answer').innerHTML='<span class="error">'+e.message+'</span>'}finally{$('send').disabled=false}};
-</script></body></html>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MuleSoft AI Engineering Copilot</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#080a0f;color:#f5f7fb;font-family:Inter,system-ui,sans-serif}main{height:100vh;display:grid;grid-template-columns:250px 1fr}.side{border-right:1px solid #252b36;padding:22px;background:#0d1017}.brand{font-weight:800;font-size:18px}.tag{font-size:12px;color:#8d98a8;margin-top:5px}.new,.clear{width:100%;margin-top:22px;padding:10px;border:1px solid #303846;background:#151a23;color:#fff;border-radius:9px;cursor:pointer}.settings{position:absolute;bottom:20px;width:205px;color:#8d98a8;font-size:12px}.settings input{width:100%;margin-top:7px;background:#0a0d12;border:1px solid #303846;color:#fff;padding:8px;border-radius:7px}.workspace{display:flex;flex-direction:column;min-width:0}.top{height:64px;border-bottom:1px solid #252b36;display:flex;align-items:center;padding:0 25px;justify-content:space-between}.status{font-size:12px;color:#8d98a8}.messages{flex:1;overflow:auto;padding:30px max(20px,calc((100% - 850px)/2))}.message{margin:0 auto 25px;max-width:850px}.role{font-weight:700;margin-bottom:7px}.message.user .role{color:#c9d2df}.message.assistant .role{color:#9fc5ff}.text{white-space:pre-wrap;line-height:1.65;background:#11151d;border:1px solid #252c38;border-radius:12px;padding:16px}.small{font-size:11px;color:#778292;margin-top:7px}.composer{padding:18px max(20px,calc((100% - 850px)/2));border-top:1px solid #252b36}.box{display:flex;gap:10px;background:#11151d;border:1px solid #303846;border-radius:13px;padding:10px}.box textarea{flex:1;resize:none;min-height:60px;background:transparent;border:0;outline:0;color:#fff;font:inherit;padding:7px}.run{align-self:flex-end;background:#fff;color:#080a0f;border:0;border-radius:9px;padding:10px 15px;font-weight:700;cursor:pointer}.run:disabled{opacity:.5}
+</style></head>
+<body><main><aside class="side"><div class="brand">MuleSoft AI Copilot</div><div class="tag">Engineering workspace</div><button class="new" onclick="document.getElementById('prompt').focus()">+ New task</button><button class="clear" id="clear">Clear conversation</button><div class="settings">Backend API<input id="api" value="http://localhost:8000"></div></aside><section class="workspace"><header class="top"><strong>Engineering Copilot</strong><span class="status" id="status">Ready</span></header><div class="messages" id="messages"><div class="message assistant"><div class="role">Copilot</div><div class="text">Tell me what you need to build, transform, debug, test, or design in MuleSoft. Press Ctrl+Enter to run.</div></div></div><div class="composer"><div class="box"><textarea id="prompt" placeholder="e.g. Create DataWeave that groups customers by department and removes null fields"></textarea><button class="run" id="run">Run</button></div></div></section></main><script src="app.js"></script></body></html>
