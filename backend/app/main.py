@@ -1,9 +1,11 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .contracts import ChatRequest, ChatResponse
 from .orchestrator import Orchestrator
 
 app = FastAPI(title="MuleSoft AI Engineering Copilot", version="0.2.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=False, allow_methods=["*"], allow_headers=["*"])
 orchestrator = Orchestrator()
 
 @app.get("/health")
