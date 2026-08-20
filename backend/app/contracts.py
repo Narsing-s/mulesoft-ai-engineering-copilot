@@ -10,3 +10,6 @@ class ChatResponse(BaseModel):
     answer: str
     confidence: float
     actions: list[str]
+    verified: bool
+    attempts: int
+    validation: str
