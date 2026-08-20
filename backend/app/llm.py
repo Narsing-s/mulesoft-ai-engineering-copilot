@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 
@@ -14,13 +15,17 @@ class LLMError(RuntimeError):
 
 
 class LLMClient:
-    """OpenAI-compatible client with Groq support and an offline mock fallback."""
+    """OpenAI-compatible client with Groq support and bounded token usage."""
 
     def __init__(self):
         self.provider = os.getenv("AI_PROVIDER", "mock").lower()
         self.api_key = os.getenv("AI_API_KEY", "")
-        self.base_url = os.getenv("AI_BASE_URL", "https://api.groq.com/openai/v1").rstrip("/")
-        self.model = os.getenv("AI_MODEL", "llama-3.3-70b-versatile")
+        self.base_url = os.getenv(
+            "AI_BASE_URL", "https://api.groq.com/openai/v1"
+        ).rstrip("/")
+        self.model = os.getenv("AI_MODEL", "openai/gpt-oss-120b")
+        self.max_tokens = int(os.getenv("AI_MAX_TOKENS", "4096"))
+        self.timeout = int(os.getenv("AI_TIMEOUT_SECONDS", "60"))
 
     def generate(self, system: str, user: str, temperature: float = 0.1) -> str:
         if self.provider in ("mock", "offline") or not self.api_key:
@@ -29,11 +34,13 @@ class LLMClient:
         payload = json.dumps({
             "model": self.model,
             "temperature": temperature,
+            "max_tokens": self.max_tokens,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-        }).encode()
+        }).encode("utf-8")
+
         request = urllib.request.Request(
             f"{self.base_url}/chat/completions",
             data=payload,
@@ -43,12 +50,37 @@ class LLMClient:
             },
             method="POST",
         )
+
         try:
-            with urllib.request.urlopen(request, timeout=60) as response:
-                body = json.loads(response.read().decode())
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                body = json.loads(response.read().decode("utf-8"))
             return body["choices"][0]["message"]["content"]
-        except (urllib.error.URLError, urllib.error.HTTPError, KeyError, json.JSONDecodeError) as exc:
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode("utf-8", errors="replace")
+            try:
+                detail = json.loads(raw)
+            except json.JSONDecodeError:
+                detail = raw
+
+            if exc.code == 429:
+                # Do not blindly retry a daily TPD exhaustion: retrying only
+                # consumes more time and cannot restore an exhausted quota.
+                raise LLMError(
+                    "AI provider rate limit/quota reached (HTTP 429). "
+                    f"Model={self.model}. "
+                    "If Groq reports tokens-per-day exhaustion, wait for the "
+                    "reset or configure another provider/API key. "
+                    f"Provider detail: {detail}"
+                ) from exc
+
+            raise LLMError(
+                f"AI provider request failed (HTTP {exc.code}): {detail}"
+            ) from exc
+        except (urllib.error.URLError, KeyError, json.JSONDecodeError) as exc:
             raise LLMError(f"AI provider request failed: {exc}") from exc
 
     def _mock(self, user: str) -> str:
-        return "Offline mode is active. Configure AI_PROVIDER=groq and AI_API_KEY to enable model generation.\n\nRequest: " + user
+        return (
+            "Offline mode is active. Configure AI_PROVIDER and AI_API_KEY "
+            "to enable model generation.\n\nRequest: " + user
+        )
