@@ -1,8 +1,10 @@
 import json
 import re
 from dataclasses import dataclass
+
 from .llm import LLMClient, LLMError
-from execution.dw_executor import DataWeaveExecutor
+from ..execution.dw_executor import DataWeaveExecutor
+
 
 @dataclass
 class PipelineResult:
@@ -10,6 +12,7 @@ class PipelineResult:
     verified: bool
     attempts: int
     validation: str
+
 
 class EngineeringPipeline:
     def __init__(self):
@@ -21,42 +24,73 @@ class EngineeringPipeline:
         system = self._system_prompt(agent)
         user = self._user_prompt(message, context)
         last_answer = ""
+
         for attempt in range(1, 4):
             try:
                 answer = self.llm.generate(system, user)
             except LLMError as exc:
                 return PipelineResult(str(exc), False, attempt - 1, "provider_error")
+
             last_answer = answer
             validation = self._validate(agent, answer)
+
             if validation == "pass" and agent == "dataweave":
-                execution = self._execute_dw(answer, message, context)
-                if execution["executed"]:
-                    if execution["status"] == "executed":
-                        return PipelineResult(answer + "\n\nExecution result:\n" + json.dumps(execution["output"], indent=2), True, attempt, "executed_and_validated")
+                execution = self._execute_dw(answer, context)
+                if execution["executed"] and execution["status"] == "executed":
+                    return PipelineResult(
+                        answer + "\n\nExecution result:\n" + json.dumps(execution["output"], indent=2),
+                        True,
+                        attempt,
+                        "executed_and_validated",
+                    )
+                if execution["status"] == "execution_error":
                     user = self._repair_prompt(message, context, answer, execution)
                     system += "\nFix the transformation based on the execution error. Return the complete corrected DataWeave."
                     continue
                 return PipelineResult(answer, False, attempt, execution["status"])
+
             if validation == "pass":
                 return PipelineResult(answer, True, attempt, "validated")
-            user = self._repair_prompt(message, context, answer, {"status": validation, "executed": False, "error": validation})
+
+            user = self._repair_prompt(message, context, answer, {
+                "status": validation,
+                "executed": False,
+                "error": validation,
+            })
+
         return PipelineResult(last_answer, False, 3, "max_repair_attempts")
 
-    def _execute_dw(self, answer: str, message: str, context: dict) -> dict:
+    def _execute_dw(self, answer: str, context: dict) -> dict:
         match = re.search(r"```(?:dataweave|dw)?\s*(%dw[\s\S]*?)```", answer, re.I)
         script = match.group(1).strip() if match else ""
         input_payload = context.get("input") or context.get("inputPayload")
+
         if not script or input_payload is None:
-            return {"status": "not_configured", "executed": False, "output": None, "error": "Need a fenced DataWeave script and context.input/context.inputPayload for execution"}
+            return {
+                "status": "not_configured",
+                "executed": False,
+                "output": None,
+                "error": "Provide context.input/context.inputPayload and a fenced DataWeave script.",
+            }
+
         if not isinstance(input_payload, str):
             input_payload = json.dumps(input_payload)
+
         return self.dw.execute(script, input_payload, context.get("inputMimeType", "application/json"))
 
     def _user_prompt(self, message: str, context: dict) -> str:
-        return f"Request:\n{message}\n\nContext:\n{json.dumps(context, default=str, indent=2)}\n\nReturn implementation-ready MuleSoft output. Put generated code in fenced blocks. Never claim execution unless an execution result is explicitly available."
+        return (
+            f"Request:\n{message}\n\nContext:\n{json.dumps(context, default=str, indent=2)}\n\n"
+            "Return implementation-ready MuleSoft output. Put generated code in fenced blocks. "
+            "Never claim execution unless an execution result is explicitly available."
+        )
 
     def _repair_prompt(self, message: str, context: dict, answer: str, execution: dict) -> str:
-        return self._user_prompt(message, context) + f"\n\nPrevious answer:\n{answer}\n\nValidation/execution feedback:\n{json.dumps(execution, default=str)}\n\nRepair the answer and return the complete corrected artifact."
+        return self._user_prompt(message, context) + (
+            f"\n\nPrevious answer:\n{answer}\n\n"
+            f"Validation/execution feedback:\n{json.dumps(execution, default=str)}\n\n"
+            "Repair the answer and return the complete corrected artifact."
+        )
 
     def _system_prompt(self, agent: str) -> str:
         prompts = {
