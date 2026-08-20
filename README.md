@@ -4,67 +4,83 @@ An AI-native engineering platform for MuleSoft developers, integration engineers
 
 ## Vision
 
-Go beyond code generation: **Understand → Generate → Execute → Validate → Debug → Fix → Explain**.
+Go beyond code generation: **Understand → Generate → Validate → Debug → Fix → Explain**.
 
-The platform is designed as a new product and is intentionally independent from `dw-ai-copilot`.
+This is a new product and is intentionally independent from `dw-ai-copilot`.
 
-## Core capabilities
+## Current runnable foundation
 
-- DataWeave generation, explanation, optimization, and debugging
-- Mule XML flow generation and repair
-- RAML / API specification generation
-- MUnit test generation
-- Mule runtime and connector error diagnosis
-- Mule project analysis and repository-aware Q&A
-- SQL assistance for integration projects
-- Architecture and integration design assistance
-- RAG grounded in MuleSoft documentation and project knowledge
-- Model routing and agent orchestration
-- Deterministic execution and validation where possible
+- FastAPI backend with specialized-agent routing
+- Groq/OpenAI-compatible model provider abstraction
+- Offline/mock mode when no API key is configured
+- Agent-specific prompts for DataWeave, debugging, RAML, Mule flows, and MUnit
+- Generation + deterministic response validation pipeline
+- Verification metadata returned by the API
+- CORS-enabled API
+- Functional browser UI in `frontend/index.html`
+- Docker Compose configuration
 
-## Product principle
+## Run locally
 
-An LLM response is not considered complete just because code was generated. Code should be validated and, where an execution engine is available, executed against representative input before being presented as verified.
+```bash
+cp .env.example .env
+# For offline mode leave AI_PROVIDER=mock
+# For Groq set AI_PROVIDER=groq and AI_API_KEY=<your-key>
+docker compose up --build
+```
 
-## Initial architecture
+Backend health: `http://localhost:8000/health`
+
+Open `frontend/index.html` in a browser and use the Copilot UI. The UI calls `http://localhost:8000` by default; set `localStorage.COPILOT_API` if the backend is hosted elsewhere.
+
+## AI configuration
+
+The backend uses an OpenAI-compatible chat-completions interface. The default remote configuration is Groq. Provider configuration is environment-based, so keys are never committed to the repository.
+
+```text
+AI_PROVIDER=groq
+AI_API_KEY=<secret>
+AI_BASE_URL=https://api.groq.com/openai/v1
+AI_MODEL=llama-3.3-70b-versatile
+```
+
+For offline development:
+
+```text
+AI_PROVIDER=mock
+AI_API_KEY=
+```
+
+## Product architecture
 
 ```text
 Web UI
   ↓
-API / Application Layer
+FastAPI
   ↓
 AI Orchestrator
   ├── DataWeave Agent
   ├── Mule Debugger Agent
   ├── Flow Builder Agent
   ├── RAML Agent
-  ├── MUnit Agent
-  ├── SQL Agent
-  └── Architecture Agent
+  └── MUnit Agent
   ↓
-Knowledge / RAG ← MuleSoft docs + project index
+Generation Pipeline
   ↓
-Execution & Validation
+Validation / Execution Adapters
   ↓
 Verified response
 ```
 
-## Repository structure
+The next execution milestone is a deterministic DataWeave runtime adapter. The API already exposes the `DW_EXECUTOR_URL` configuration point for that service; until an executor is connected, the system does **not** claim that generated DataWeave was actually executed.
 
-```text
-frontend/          Web application
-backend/           API and application services
-agents/            Specialized MuleSoft agents
-orchestrator/      Agent routing and workflow coordination
-rag/               Retrieval and knowledge services
-project-analyzer/  Mule project indexing and code intelligence
-execution/         Deterministic execution/validation adapters
-knowledge/         Curated knowledge and ingestion tooling
-tests/             Cross-component tests
-docs/              Product and architecture documentation
-deployment/        Deployment configuration
-```
+## Long-term capabilities
 
-## Status
-
-Early foundation. The repository is being built as a separate product from the existing DataWeave Copilot.
+- Mule project indexing and repository-aware Q&A
+- RAG grounded in MuleSoft documentation and project knowledge
+- SQL and connector expertise
+- Architecture agent
+- MUnit execution
+- Self-repair loops based on real execution errors
+- Multi-model routing
+- Enterprise authentication and auditability
