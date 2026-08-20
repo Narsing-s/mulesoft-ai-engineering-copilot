@@ -15,31 +15,44 @@ class AgentResult:
 
 
 class Orchestrator:
-    """Route natural-language MuleSoft requests to the right engineering agent.
-
-    Routing is intentionally capability-based rather than tied to a fixed set of
-    example questions. If the user supplies an input payload and describes a
-    transformation/aggregation/filtering operation, DataWeave is preferred so
-    the generated script can be sent through the real DW executor.
-    """
+    """Route natural-language MuleSoft requests to the right engineering agent."""
 
     def __init__(self):
         self.pipeline = EngineeringPipeline()
 
     def route(self, message: str, context: dict | None = None) -> AgentResult:
-        text = (message or "").lower()
+        text = (message or "").strip()
+        normalized = text.lower()
         context = context or {}
+
+        # Greetings are conversation, not engineering tasks. Keep them local
+        # so a simple "hi" never consumes model tokens or generates assumptions.
+        if self._is_greeting(normalized):
+            return AgentResult(
+                agent="general-mulesoft",
+                answer=(
+                    "Hi! 👋 I’m your MuleSoft AI Copilot.\n\n"
+                    "Ask me anything about DataWeave, Mule flows, APIs/RAML, "
+                    "MUnit, debugging, connectors, SQL, deployments, or "
+                    "end-to-end integrations."
+                ),
+                confidence=1.0,
+                actions=["greeting"],
+                verified=True,
+                attempts=0,
+                validation="greeting",
+            )
 
         dataweave_terms = (
             "dataweave", "%dw", "transform", "transformation", "mapping",
             "map ", "filter", "group by", "groupby", "group customers",
-            "sort", "order by", "distinct", "pluck", "mapobject",
-            "reduce", "flatten", "flatmap", "join", "merge", "rename",
-            "remove null", "exclude null", "missing fields", "calculate",
-            "average", "avg", "sum", "count", "min", "max", "conditional",
-            "if else", "convert json", "json to xml", "xml to json",
-            "json to csv", "csv to json", "payload", "field", "fields",
-            "extract", "return the names", "return names", "customers",
+            "sort", "order by", "distinct", "pluck", "mapobject", "reduce",
+            "flatten", "flatmap", "join", "merge", "rename", "remove null",
+            "exclude null", "missing fields", "calculate", "average", "avg",
+            "sum", "count", "min", "max", "conditional", "if else",
+            "convert json", "json to xml", "xml to json", "json to csv",
+            "csv to json", "payload", "field", "fields", "extract",
+            "return the names", "return names", "customers",
         )
         munit_terms = (
             "munit", "unit test", "test case", "assert that", "mock when",
@@ -68,7 +81,6 @@ class Orchestrator:
             "delete ", "merge into", "stored procedure", "database query",
         )
 
-        # Explicit mode from the frontend wins, except Auto mode.
         requested_tool = str(context.get("tool", "auto")).lower()
         forced = {
             "dataweave": "dataweave",
@@ -80,22 +92,22 @@ class Orchestrator:
         }
         if requested_tool in forced:
             agent = forced[requested_tool]
-        elif any(term in text for term in munit_terms):
+        elif any(term in normalized for term in munit_terms):
             agent = "munit"
-        elif any(term in text for term in raml_terms):
+        elif any(term in normalized for term in raml_terms):
             agent = "raml"
-        elif any(term in text for term in debug_terms):
+        elif any(term in normalized for term in debug_terms):
             agent = "mule-debugger"
-        elif any(term in text for term in flow_terms):
+        elif any(term in normalized for term in flow_terms):
             agent = "flow-builder"
-        elif any(term in text for term in sql_terms) and not any(
-            term in text for term in dataweave_terms
+        elif any(term in normalized for term in sql_terms) and not any(
+            term in normalized for term in dataweave_terms
         ):
             agent = "general-mulesoft"
-        elif any(term in text for term in dataweave_terms):
+        elif any(term in normalized for term in dataweave_terms):
             agent = "dataweave"
         elif context.get("input") is not None and any(
-            verb in text for verb in (
+            verb in normalized for verb in (
                 "return", "create", "convert", "extract", "group", "filter",
                 "calculate", "transform", "map", "sort", "remove", "rename",
             )
@@ -114,7 +126,7 @@ class Orchestrator:
         }
         confidence, actions = metadata[agent]
 
-        result = self.pipeline.run(agent, message, context)
+        result = self.pipeline.run(agent, text, context)
         return AgentResult(
             agent,
             result.answer,
@@ -124,3 +136,15 @@ class Orchestrator:
             result.attempts,
             result.validation,
         )
+
+    @staticmethod
+    def _is_greeting(text: str) -> bool:
+        if not text:
+            return False
+        cleaned = " ".join(text.split()).strip("!?.,:;-")
+        greetings = {
+            "hi", "hello", "hey", "hiya", "howdy", "namaste",
+            "good morning", "good afternoon", "good evening", "good night",
+            "hi there", "hello there", "hey there",
+        }
+        return cleaned in greetings
