@@ -1,24 +1,17 @@
-const state={context:{},history:[]};
-const api=()=>localStorage.getItem('COPILOT_API')||'http://localhost:8000';
+const state={context:{},history:[],tool:'auto'};
 const el=id=>document.getElementById(id);
-function addMessage(role,text,meta=''){
- const item=document.createElement('div'); item.className=`message ${role}`;
- item.innerHTML=`<div class="role">${role==='user'?'You':'Copilot'}</div><div class="text"></div><div class="small">${meta}</div>`;
- item.querySelector('.text').textContent=text; el('messages').appendChild(item); el('messages').scrollTop=el('messages').scrollHeight;
-}
-async function run(){
- const input=el('prompt').value.trim(); if(!input)return;
- addMessage('user',input); el('prompt').value=''; el('run').disabled=true; el('status').textContent='Orchestrating…';
- try{
-  const r=await fetch(api()+'/api/v1/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:input,context:state.context})});
-  const d=await r.json(); if(!r.ok)throw new Error(d.detail||'Request failed');
-  state.history.push({input,output:d}); state.context.lastResponse=d;
-  addMessage('assistant',d.answer,`Agent ${d.agent} · ${Math.round(d.confidence*100)}% · ${d.validation} · ${d.attempts} attempt(s)`);
-  el('status').textContent=d.verified?'Verified result':'Generated result';
- }catch(e){addMessage('assistant',e.message,'Request failed');el('status').textContent='Error'}finally{el('run').disabled=false}
-}
-el('run').onclick=run;
-el('prompt').addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter')run()});
-el('clear').onclick=()=>{el('messages').innerHTML='';state.history=[];state.context={};el('status').textContent='Ready'};
-el('api').value=api();
-el('api').onchange=()=>localStorage.setItem('COPILOT_API',el('api').value.replace(/\/$/,''));
+const api=()=> (localStorage.getItem('COPILOT_API')||'http://localhost:8000').replace(/\/$/,'');
+function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;')}
+function md(text){let s=esc(text||''),blocks=[];s=s.replace(/```(?:dataweave|dw|json|xml|raml|yaml|sql|munit)?\s*([\s\S]*?)```/gi,(_,c)=>{let t=`@@C${blocks.length}@@`;blocks.push(`<pre><code>${c.trim()}</code></pre>`);return t});s=s.replace(/`([^`]+)`/g,'<code>$1</code>').replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/^## (.*)$/gm,'<h3>$1</h3>').replace(/^# (.*)$/gm,'<h3>$1</h3>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n\n/g,'</p><p>').replace(/\n/g,'<br>');s=`<p>${s}</p>`;blocks.forEach((x,i)=>s=s.replace(`@@C${i}@@`,x));return s}
+function addMessage(role,text,meta='',data=null){const item=document.createElement('article');item.className=`message ${role}`;const verified=data?.verified===true,failed=data?.validation==='provider_error';const badges=role==='assistant'&&data?`<div class="result-strip"><span class="badge">Agent: ${esc(data.agent||'copilot')}</span><span class="badge">${Math.round((Number(data.confidence)||0)*100)}% confidence</span><span class="badge ${verified?'ok':failed?'warn':''}">${esc(data.validation||'generated')}</span>${data.attempts!=null?`<span class="badge">${data.attempts} attempt(s)</span>`:''}</div>`:'';item.innerHTML=`<div class="role-row"><div class="avatar">${role==='user'?'YOU':'AI'}</div><div><div class="role">${role==='user'?'You':'MuleSoft Copilot'}</div><div class="meta">${esc(meta)}</div></div></div><div class="bubble">${role==='assistant'?md(text):`<p>${esc(text).replace(/\n/g,'<br>')}</p>`}</div>${badges}`;el('thread').appendChild(item);el('messages').scrollTop=el('messages').scrollHeight}
+function status(label,mode=''){el('status').textContent=label;el('dot').className=`dot ${mode}`}
+function context(){return {...state.context,tool:state.tool,conversation:state.history.slice(-8).map(x=>({user:x.input,assistant:x.output?.answer||''}))}}
+function parse(v){if(!v.trim())return null;try{return JSON.parse(v)}catch{return v}}
+function drawer(title='Execution context'){el('drawerTitle').textContent=title;el('drawer').classList.add('open')}
+function applyContext(){const i=el('inputPayload').value.trim(),o=el('expectedOutput').value.trim(),x=el('extraContext').value.trim();state.context={...state.context,...(i?{input:parse(i)}:{}),...(o?{expectedOutput:parse(o)}:{}),inputMimeType:el('inputMime').value,...(x?{additionalContext:x}:{})};updateContext();el('drawer').classList.remove('open')}
+function updateContext(){const b=el('contextBar');const chips=[];if(state.context.input!==undefined)chips.push('<span class="chip">✓ Input payload</span>');if(state.context.expectedOutput!==undefined)chips.push('<span class="chip">✓ Expected output</span>');if(state.context.additionalContext)chips.push('<span class="chip">✓ Code / log</span>');b.innerHTML=`<button class="attach" id="inputBtn">＋ Input payload</button><button class="attach" id="expectedBtn">＋ Expected output</button><button class="attach" id="fileBtn">＋ Code / log</button>${chips.join('')}`;el('inputBtn').onclick=()=>drawer('Input payload');el('expectedBtn').onclick=()=>drawer('Expected output');el('fileBtn').onclick=()=>drawer('Code / log / context')}
+function tool(t){state.tool=t;document.querySelectorAll('.tool').forEach(b=>b.classList.toggle('active',b.dataset.tool===t));const n={auto:'Auto mode',dataweave:'DataWeave mode',debug:'Debug mode',raml:'API / RAML mode',flow:'Mule Flow mode',munit:'MUnit mode',sql:'SQL / Database mode'};el('modeLabel').textContent=`${n[t]||'Auto mode'} · real execution when available`}
+async function check(){try{const r=await fetch(api()+'/docs');if(r.ok)status('Backend connected','ok');else status('Backend unavailable')}catch{status('Backend unavailable')}}
+async function run(){const input=el('prompt').value.trim();if(!input||el('run').disabled)return;addMessage('user',input,state.tool==='auto'?'Auto mode':`${state.tool} mode`);el('prompt').value='';el('count').textContent='0';el('run').disabled=true;status('Thinking…','busy');try{const r=await fetch(api()+'/api/v1/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:input,context:context()})});let d;try{d=await r.json()}catch{throw new Error(`Backend returned HTTP ${r.status}`)}if(!r.ok)throw new Error(d.detail||d.error||`Request failed (${r.status})`);state.history.push({input,output:d});state.context.lastResponse=d;addMessage('assistant',d.answer||'No answer returned.',d.verified?'Verified result':'Generated result',d);status(d.verified?'Verified result':'Generated result',d.verified?'ok':'')}catch(e){addMessage('assistant',`**Request failed**\n\n${e.message}\n\nIf this is a Groq **HTTP 429**, your AI provider quota/rate limit is exhausted. The frontend is connected correctly; wait for reset or configure another provider/model.`,'Request failed',{validation:'provider_error',confidence:0});status('Request failed')}finally{el('run').disabled=false;el('prompt').focus()}}
+function newChat(){state.history=[];state.context={};el('thread').innerHTML='';el('welcome').style.display='';el('thread').appendChild(el('welcome'));updateContext();status('Ready');el('prompt').focus()}
+el('run').onclick=run;el('newChat').onclick=newChat;el('clearChat').onclick=newChat;el('mobileNew').onclick=newChat;el('contextBtn').onclick=()=>drawer();el('closeDrawer').onclick=()=>el('drawer').classList.remove('open');el('saveContext').onclick=applyContext;document.querySelectorAll('.tool').forEach(b=>b.onclick=()=>tool(b.dataset.tool));document.querySelectorAll('[data-prompt]').forEach(b=>b.onclick=()=>{el('prompt').value=b.dataset.prompt;el('prompt').focus()});el('prompt').oninput=()=>el('count').textContent=el('prompt').value.length;el('prompt').onkeydown=e=>{if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){e.preventDefault();run()}};el('api').value=api();el('api').onchange=()=>{localStorage.setItem('COPILOT_API',el('api').value.replace(/\/$/,''));check()};updateContext();tool('auto');check();
