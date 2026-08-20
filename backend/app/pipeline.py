@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 
 from .llm import LLMClient, LLMError
-from ..execution.dw_executor import DataWeaveExecutor
+from execution.dw_executor import DataWeaveExecutor
 
 
 @dataclass
