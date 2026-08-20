@@ -1,6 +1,5 @@
 import json
 import os
-import time
 import urllib.error
 import urllib.request
 
@@ -15,7 +14,7 @@ class LLMError(RuntimeError):
 
 
 class LLMClient:
-    """OpenAI-compatible client with Groq support and bounded token usage."""
+    """OpenAI-compatible client with Groq support and a small-model fallback."""
 
     def __init__(self):
         self.provider = os.getenv("AI_PROVIDER", "mock").lower()
@@ -24,15 +23,54 @@ class LLMClient:
             "AI_BASE_URL", "https://api.groq.com/openai/v1"
         ).rstrip("/")
         self.model = os.getenv("AI_MODEL", "openai/gpt-oss-120b")
-        self.max_tokens = int(os.getenv("AI_MAX_TOKENS", "4096"))
+        self.fallback_model = os.getenv(
+            "AI_FALLBACK_MODEL", "llama-3.1-8b-instant"
+        )
+        self.max_tokens = int(os.getenv("AI_MAX_TOKENS", "2048"))
         self.timeout = int(os.getenv("AI_TIMEOUT_SECONDS", "60"))
 
     def generate(self, system: str, user: str, temperature: float = 0.1) -> str:
         if self.provider in ("mock", "offline") or not self.api_key:
             return self._mock(user)
 
+        try:
+            return self._request(self.model, system, user, temperature)
+        except LLMError as exc:
+            # Groq applies model-specific token limits. If the large model is
+            # exhausted, use the lightweight production model before failing.
+            if (
+                self.provider == "groq"
+                and self.fallback_model
+                and self.fallback_model != self.model
+                and "HTTP 429" in str(exc)
+            ):
+                try:
+                    return self._request(
+                        self.fallback_model,
+                        system,
+                        user,
+                        temperature,
+                    )
+                except LLMError as fallback_exc:
+                    raise LLMError(
+                        "AI provider rate limit reached for the primary and "
+                        f"fallback models. Primary={self.model}; "
+                        f"fallback={self.fallback_model}. "
+                        "Wait for the provider limit to reset or configure "
+                        "another provider/API key. "
+                        f"Fallback detail: {fallback_exc}"
+                    ) from fallback_exc
+            raise
+
+    def _request(
+        self,
+        model: str,
+        system: str,
+        user: str,
+        temperature: float,
+    ) -> str:
         payload = json.dumps({
-            "model": self.model,
+            "model": model,
             "temperature": temperature,
             "max_tokens": self.max_tokens,
             "messages": [
@@ -63,14 +101,8 @@ class LLMClient:
                 detail = raw
 
             if exc.code == 429:
-                # Do not blindly retry a daily TPD exhaustion: retrying only
-                # consumes more time and cannot restore an exhausted quota.
                 raise LLMError(
-                    "AI provider rate limit/quota reached (HTTP 429). "
-                    f"Model={self.model}. "
-                    "If Groq reports tokens-per-day exhaustion, wait for the "
-                    "reset or configure another provider/API key. "
-                    f"Provider detail: {detail}"
+                    f"AI provider request failed (HTTP 429) for model {model}: {detail}"
                 ) from exc
 
             raise LLMError(
